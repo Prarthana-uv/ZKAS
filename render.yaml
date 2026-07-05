@@ -1,0 +1,56 @@
+# Render.com Deployment Configuration
+# This file tells Render how to deploy your services
+
+services:
+  # PostgreSQL Database
+  - type: pserv
+    name: zkas-db
+    env: docker
+    plan: free
+    region: oregon
+    maxClientConnections: 20
+
+  # Python Crypto Service
+  - type: web
+    name: zkas-crypto
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r crypto/requirements.txt
+    startCommand: python crypto/flask_api.py
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 5000
+
+  # Node.js Backend API
+  - type: web
+    name: zkas-api
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: |
+      cd backend && npm install
+    startCommand: node backend/app.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        fromService:
+          name: zkas-db
+          property: connectionString
+
+  # React Frontend
+  - type: static
+    name: zkas-frontend
+    staticPublishPath: ./frontend/build
+    buildCommand: |
+      cd frontend && npm install && npm run build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://zkas-api.onrender.com
+      - key: REACT_APP_CRYPTO_URL
+        value: https://zkas-crypto.onrender.com

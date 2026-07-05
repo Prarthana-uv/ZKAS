@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: zkas-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zkas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Python Crypto Service
+  crypto-service:
+    build:
+      context: ./crypto
+      dockerfile: Dockerfile
+    container_name: zkas-crypto
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: production
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Node.js Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zkas-backend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: zkas_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      CRYPTO_SERVICE_URL: http://crypto-service:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      crypto-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: zkas-frontend
+    ports:
+      - "3001:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:3000/api
+      REACT_APP_CRYPTO_URL: http://localhost:5000
+    depends_on:
+      - backend
+      - crypto-service
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: zkas-network
